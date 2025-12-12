@@ -9,33 +9,14 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb' },
-                        slate: { 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 800: '#1e293b' }
-                    },
-                    boxShadow: {
-                        'soft': '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
-                        'card': '0 0 0 1px rgba(0,0,0,0.03), 0 2px 8px rgba(0,0,0,0.04)'
-                    }
-                }
-            }
-        }
-    </script>
     <style>
-        body { background-color: #f8fafc; color: #334155; font-family: -apple-system, system-ui, sans-serif; overflow: hidden; }
+        body { background-color: #f8fafc; overflow: hidden; font-family: -apple-system, sans-serif; }
         .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .glass-panel { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
-        .animate-enter { animation: enter 0.3s ease-out forwards; }
+        .animate-enter { animation: enter 0.2s ease-out forwards; }
         @keyframes enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .mobile-chat-active .sidebar { display: none; }
-        .mobile-chat-active .chat-area { display: flex; }
-        @media (min-width: 768px) {
-            .mobile-chat-active .sidebar { display: flex; }
-        }
+        .mobile-active .sidebar { display: none; }
+        .mobile-active .chat-area { display: flex; }
+        @media (min-width: 768px) { .mobile-active .sidebar { display: flex; } }
     </style>
 </head>
 <body>
@@ -43,221 +24,201 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
-       
+        
         const SOCKET_URL = "https://lt-1li6.onrender.com"; 
-
+        
         const NOTIFICATION_SOUND = "data:audio/mp3;base64,SUQzBAAAAAABAFRYWFgAAAASAAADbWFqb3JfYnJhbmQAbXA0MgBUWFhYAAAAEQAAA21pbm9yX3ZlcnNpb24AMABUWFhYAAAAHAAAA2NvbXBhdGlibGVfYnJhbmRzAGlzb21tcDQyAFRTU0UAAAAPAAADTGF2ZjU3LjgzLjEwMAAAAAAAAAAAAAAA//uQZAAAAAAAABAAAAAAAAAAAAkJAAAgAAAABBjatLUkAAALiI1yUIAAAAAA//uQZAAABHpWUNzgAAIE6sobnAAACW1lS+w8AAiVrKl9h4AAAD/8z/8///4v/9P/8v8Z///4iH/////5MAAiAAACAAAAABAA8AAAAA//uQZAEABdZRVH5gAAl1lKU/mAAAggVlS+w8AAhxrKl9h4AAAAv///4DAAEAJgAOAFAAbAB8AIAAxADoAPABSAHAAgACWAKgArAC8AMQA0gDeAOwA+gEIAQwBGgEgASgBLAEyAToBQAFIAT4BRAFQAVgBXAFkAWgBcAF4AYABiAGMAZgBoAGoAbABuAHAAcgB0AHYAxQD9AP8BAQEDAv///wAAAAAA";
 
         function App() {
-            const [view, setView] = useState('login'); 
+            const [view, setView] = useState('login');
             const [password, setPassword] = useState('');
-            const [loading, setLoading] = useState(false);
-            const [error, setError] = useState('');
             const [users, setUsers] = useState([]);
             const [activeUser, setActiveUser] = useState(null);
             const [messages, setMessages] = useState([]);
             const [input, setInput] = useState("");
-            const [isMobileView, setIsMobileView] = useState(false);
-
+            const [isMobile, setIsMobile] = useState(false);
+            
             const socketRef = useRef();
             const scrollRef = useRef();
+            const fileInputRef = useRef();
             const audioRef = useRef(new Audio(NOTIFICATION_SOUND));
 
+            // 登录
             const handleLogin = async () => {
-                if(!password) return;
-                setLoading(true);
-                setError('');
                 try {
                     const res = await fetch(`${SOCKET_URL}/api/admin/login`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ password })
                     });
-                    const data = await res.json();
-                    if (data.success) {
+                    if ((await res.json()).success) {
                         setView('dashboard');
                         initSocket();
-                    } else {
-                        setError(data.msg || '密码错误');
-                    }
-                } catch(e) {
-                    setError('无法连接服务器，请检查网络');
-                }
-                setLoading(false);
+                    } else alert("密码错误");
+                } catch { alert("连接失败"); }
             };
 
+            // 初始化连接
             const initSocket = () => {
-                fetch(`${SOCKET_URL}/api/admin/users`).then(res => res.json()).then(setUsers);
-                
+                fetch(`${SOCKET_URL}/api/admin/users`).then(r=>r.json()).then(setUsers);
                 socketRef.current = io(SOCKET_URL);
-                socketRef.current.on('connect', () => socketRef.current.emit('join', { isAdmin: true }));
+                socketRef.current.emit('join', { isAdmin: true });
                 
                 socketRef.current.on('admin_receive_message', (msg) => {
                     audioRef.current.play().catch(()=>{});
+                    
+                    // 1. 如果正在聊这个人，追加消息
+                    // 注意：这里用了函数式更新，解决了旧代码不刷新的bug
                     if (activeUser && activeUser.id === msg.userId) {
-                        setMessages(prev => [...prev, msg]);
+                        setMessages(prev => {
+                            // 防止重复添加 (如果是自己发的消息，前面已经乐观更新添加过了)
+                            if (!msg.isFromUser && prev.some(m => m.tempId === msg.tempId)) return prev;
+                            return [...prev, msg];
+                        });
                     }
+
+                    // 2. 列表置顶
                     setUsers(prev => {
-                        const idx = prev.findIndex(u => u.id === msg.userId);
-                        let newUser = idx > -1 ? { ...prev[idx] } : { id: msg.userId, bossId: msg.bossId };
-                        newUser.updatedAt = new Date().toISOString();
-                        newUser.messages = [{ content: msg.content }];
-                        return [newUser, ...prev.filter(u => u.id !== msg.userId)];
+                        const others = prev.filter(u => u.id !== msg.userId);
+                        const target = prev.find(u => u.id === msg.userId) || { id: msg.userId, bossId: msg.bossId };
+                        return [{...target, updatedAt: new Date(), messages: [{content: msg.content}]}, ...others];
                     });
                 });
-
-                socketRef.current.on('admin_user_deleted', (uid) => {
-                    setUsers(prev => prev.filter(u => u.id !== uid));
-                    if(activeUser?.id === uid) setActiveUser(null);
-                });
-
-                socketRef.current.on('admin_db_cleared', () => { 
-                    setUsers([]); 
-                    setMessages([]); 
-                    setActiveUser(null); 
-                    alert('注意：数据库已被清空');
-                });
             };
 
+            // 选人
             const selectUser = async (user) => {
                 setActiveUser(user);
-                if (window.innerWidth < 768) setIsMobileView(true);
-                try {
-                    const res = await fetch(`${SOCKET_URL}/api/history/${user.id}`);
-                    setMessages(await res.json());
-                } catch(e) {}
+                if (window.innerWidth < 768) setIsMobile(true);
+                const res = await fetch(`${SOCKET_URL}/api/history/${user.id}`);
+                setMessages(await res.json());
             };
 
-            const sendMessage = () => {
-                if (!input.trim() || !activeUser) return;
-                socketRef.current.emit('admin_reply', { targetUserId: activeUser.id, content: input });
+            // 发送核心逻辑 (支持文本和图片)
+            const send = (content, type = 'text') => {
+                if (!activeUser) return;
+                
+                const tempId = Date.now(); // 临时ID用于去重
+                const msgData = { 
+                    userId: activeUser.id, // 这里只是为了存前端状态
+                    content, 
+                    type,
+                    isFromUser: false, 
+                    createdAt: new Date(),
+                    tempId 
+                };
+
+                // 🔥 乐观更新：立刻上屏，不等服务器
+                setMessages(prev => [...prev, msgData]);
                 setInput("");
+
+                // 发给服务器
+                socketRef.current.emit('admin_reply', { 
+                    targetUserId: activeUser.id, 
+                    content,
+                    tempId
+                });
+            };
+
+            // 图片上传处理
+            const handleImage = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => send(evt.target.result, 'image');
+                reader.readAsDataURL(file);
+                e.target.value = ''; // 清空，允许重复发同一张
             };
 
             useEffect(() => {
-                if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: "smooth" });
+                scrollRef.current?.scrollIntoView({ behavior: "smooth" });
             }, [messages]);
 
+            // === 登录页 ===
             if (view === 'login') return (
-                <div className="h-[100dvh] w-full bg-[#f1f5f9] flex items-center justify-center relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-96 h-96 bg-blue-200 rounded-full blur-[120px] opacity-50 -translate-x-1/2 -translate-y-1/2"></div>
-                    <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-200 rounded-full blur-[120px] opacity-50 translate-x-1/2 translate-y-1/2"></div>
-                    
-                    <div className="glass-panel p-8 md:p-12 rounded-3xl shadow-soft w-full max-w-md mx-4 border border-white/50 relative z-10 animate-enter">
-                        <div className="text-center mb-10">
-                            <div className="w-16 h-16 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-2xl mx-auto shadow-lg flex items-center justify-center mb-4 text-white">
-                                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                            </div>
-                            <h1 className="text-2xl font-bold text-slate-800">HY 总控台</h1>
-                            <p className="text-slate-400 text-sm mt-2">安全连接 · 全球客服系统</p>
-                        </div>
-
-                        <div className="space-y-4">
-                            <input type="password" 
-                                value={password}
-                                onChange={e => setPassword(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                                placeholder="输入访问密码..." 
-                                className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-4 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-center tracking-widest font-bold text-lg"
-                            />
-                            
-                            {error && <div className="text-red-500 text-xs text-center font-medium bg-red-50 py-2 rounded-lg">{error}</div>}
-                            
-                            <button onClick={handleLogin} disabled={loading} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl shadow-lg shadow-slate-900/20 transition-all disabled:opacity-50">
-                                {loading ? '正在验证...' : '解锁系统'}
-                            </button>
-                        </div>
+                <div className="h-screen flex items-center justify-center bg-slate-100">
+                    <div className="bg-white p-8 rounded-2xl shadow-xl w-80">
+                        <h1 className="text-xl font-bold mb-4 text-center">总控台登录</h1>
+                        <input type="password" value={password} onChange={e=>setPassword(e.target.value)} 
+                            className="w-full border p-3 rounded-lg mb-4 text-center text-lg outline-none focus:border-blue-500" placeholder="密码" />
+                        <button onClick={handleLogin} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold">进入系统</button>
                     </div>
                 </div>
             );
 
+            // === 聊天页 ===
             return (
-                <div className={`h-[100dvh] w-full flex bg-slate-50 ${isMobileView ? 'mobile-chat-active' : ''}`}>
-                    <div className="sidebar w-full md:w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 z-10">
-                        <div className="h-16 flex items-center justify-between px-5 border-b border-slate-100 bg-white/80 backdrop-blur shrink-0">
-                            <span className="font-bold text-slate-800 tracking-tight">消息列表</span>
-                            <div className="px-2 py-1 bg-blue-50 text-blue-600 text-xs font-bold rounded-md">{users.length}</div>
+                <div className={`h-[100dvh] flex bg-white ${isMobile ? 'mobile-active' : ''}`}>
+                    {/* 左侧列表 */}
+                    <div className="sidebar w-full md:w-80 border-r flex-col z-10 bg-white">
+                        <div className="h-14 border-b flex items-center px-4 font-bold bg-slate-50">
+                            消息列表 <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">{users.length}</span>
                         </div>
-                        <div className="flex-1 overflow-y-auto hide-scrollbar p-2 space-y-1">
-                            {users.map(user => (
-                                <div key={user.id} onClick={() => selectUser(user)}
-                                    className={`p-3 rounded-xl cursor-pointer transition-all border border-transparent ${activeUser?.id === user.id ? 'bg-blue-50 border-blue-100 shadow-sm' : 'hover:bg-slate-50'}`}>
-                                    <div className="flex justify-between items-center mb-1">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                                (user.bossId||'').includes('rrii8') ? 'bg-purple-100 text-purple-700' :
-                                                (user.bossId||'').includes('iibb8') ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-600'
-                                            }`}>
-                                                {user.bossId || '未知'}
-                                            </span>
-                                            <span className="font-bold text-slate-700 text-sm truncate max-w-[100px]">{user.id.slice(0,8)}..</span>
+                        <div className="flex-1 overflow-y-auto">
+                            {users.map(u => (
+                                <div key={u.id} onClick={() => selectUser(u)} 
+                                    className={`p-3 border-b hover:bg-slate-50 cursor-pointer ${activeUser?.id === u.id ? 'bg-blue-50' : ''}`}>
+                                    <div className="flex justify-between">
+                                        <div className="font-bold text-sm text-slate-700">
+                                            <span className="bg-slate-200 px-1 rounded text-xs mr-1">{u.bossId||'无'}</span>
+                                            {u.id.slice(0,6)}..
                                         </div>
-                                        <span className="text-[10px] text-slate-400">{new Date(user.updatedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
+                                        <div className="text-xs text-slate-400">{new Date(u.updatedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>
                                     </div>
-                                    <div className="text-xs text-slate-500 truncate pl-1">
-                                        {user.messages?.[0]?.content.includes('data:image') ? '📷 [图片]' : user.messages?.[0]?.content}
+                                    <div className="text-xs text-slate-500 truncate mt-1">
+                                        {u.messages?.[0]?.content.includes('data:image') ? '[图片]' : u.messages?.[0]?.content}
                                     </div>
                                 </div>
                             ))}
                         </div>
                     </div>
 
-                    <div className="chat-area flex-1 flex flex-col bg-[#f8fafc] relative">
+                    {/* 右侧聊天 */}
+                    <div className="chat-area flex-1 flex flex-col relative bg-slate-50">
                         {activeUser ? (
                             <>
-                                <header className="h-16 px-6 border-b border-slate-200 bg-white flex items-center justify-between shadow-sm shrink-0">
-                                    <div className="flex items-center gap-3">
-                                        <button onClick={() => setIsMobileView(false)} className="md:hidden w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-600">
-                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                                        </button>
-                                        <div>
-                                            <h2 className="font-bold text-slate-800 text-sm">客户 ID: {activeUser.id}</h2>
-                                            <div className="flex items-center gap-1.5 mt-0.5">
-                                                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                                                <span className="text-xs text-slate-500">来源: {activeUser.bossId}</span>
-                                            </div>
-                                        </div>
+                                <div className="h-14 bg-white border-b flex items-center px-4 shadow-sm shrink-0 justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={()=>setIsMobile(false)} className="md:hidden p-1 bg-slate-100 rounded">⬅️</button>
+                                        <span className="font-bold">{activeUser.id}</span>
+                                        <span className="text-xs bg-green-100 text-green-700 px-2 rounded">来源: {activeUser.bossId}</span>
                                     </div>
-                                </header>
+                                </div>
 
-                                <div className="flex-1 overflow-y-auto p-5 space-y-6">
-                                    {messages.map((msg, idx) => (
-                                        <div key={idx} className={`flex ${!msg.isFromUser ? 'justify-end' : 'justify-start'} animate-enter`}>
-                                            <div className={`max-w-[85%] px-5 py-3 shadow-sm text-sm leading-relaxed ${
-                                                !msg.isFromUser 
-                                                ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' 
-                                                : 'bg-white text-slate-700 border border-slate-100 rounded-2xl rounded-tl-none'
-                                            }`}>
-                                                {msg.type === 'image' || msg.content.startsWith('data:image') ? (
-                                                    <img src={msg.content} className="max-w-[200px] rounded-lg" />
-                                                ) : (
-                                                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                                                )}
-                                                <div className={`text-[10px] mt-1 text-right ${!msg.isFromUser ? 'text-blue-200' : 'text-slate-400'}`}>
-                                                    {new Date(msg.createdAt).toLocaleTimeString()}
+                                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                    {messages.map((m, i) => (
+                                        <div key={i} className={`flex ${!m.isFromUser ? 'justify-end' : 'justify-start'} animate-enter`}>
+                                            <div className={`max-w-[80%] p-3 rounded-xl shadow-sm ${!m.isFromUser ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white border rounded-tl-none'}`}>
+                                                {m.content.includes('data:image') ? (
+                                                    <img src={m.content} className="rounded-lg max-h-60" />
+                                                ) : <p className="whitespace-pre-wrap break-words">{m.content}</p>}
+                                                <div className="text-[10px] opacity-60 text-right mt-1">
+                                                    {new Date(m.createdAt).toLocaleTimeString()}
                                                 </div>
                                             </div>
                                         </div>
                                     ))}
-                                    <div ref={scrollRef} />
+                                    <div ref={scrollRef}></div>
                                 </div>
 
-                                <div className="p-4 bg-white border-t border-slate-200 pb-safe">
-                                    <div className="flex gap-3 max-w-4xl mx-auto">
-                                        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendMessage()}
-                                            className="flex-1 bg-slate-100 text-slate-800 px-5 py-3 rounded-full outline-none focus:ring-2 focus:ring-blue-500/50 transition-all placeholder-slate-400"
-                                            placeholder="输入回复内容..." 
-                                        />
-                                        <button onClick={sendMessage} className="bg-slate-900 hover:bg-slate-800 text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg shadow-slate-900/20 transition-transform active:scale-95">
-                                            <svg className="w-5 h-5 -rotate-45 translate-x-0.5 -translate-y-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
-                                        </button>
-                                    </div>
+                                <div className="p-3 bg-white border-t flex gap-2 items-end pb-safe">
+                                    {/* 图片按钮 */}
+                                    <label className="p-3 text-slate-500 hover:bg-slate-100 rounded-full cursor-pointer">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                        <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImage} />
+                                    </label>
+                                    
+                                    <textarea rows="1" value={input} onChange={e=>setInput(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), send(input))}
+                                        className="flex-1 bg-slate-100 p-3 rounded-xl outline-none resize-none max-h-24" placeholder="回复..." />
+                                        
+                                    <button onClick={() => send(input)} className="bg-blue-600 text-white p-3 rounded-xl font-bold disabled:opacity-50" disabled={!input.trim()}>
+                                        发送
+                                    </button>
                                 </div>
                             </>
                         ) : (
-                            <div className="flex-1 flex flex-col items-center justify-center text-slate-300">
-                                <p className="text-slate-400 font-medium">请选择左侧客户开始对话</p>
-                            </div>
+                            <div className="flex-1 flex items-center justify-center text-slate-400">请选择左侧客户</div>
                         )}
                     </div>
                 </div>
