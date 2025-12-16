@@ -42,22 +42,18 @@
             -webkit-touch-callout: none;
             user-select: none;
         }
-        
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
-        
         #root { height: 100dvh; width: 100vw; display: flex; flex-direction: column; }
         button { outline: none; }
-        
         .glass-header { 
             background: rgba(255, 255, 255, 0.92); 
             backdrop-filter: blur(12px); 
             -webkit-backdrop-filter: blur(12px); 
             border-bottom: 1px solid rgba(0,0,0,0.05); 
         }
-        
         .ios-scroll { 
             overflow-y: auto; 
             -webkit-overflow-scrolling: touch; 
@@ -131,7 +127,6 @@
             const [userTyping, setUserTyping] = useState(false);
             const [onlineMap, setOnlineMap] = useState({});
             const [filterType, setFilterType] = useState('all'); 
-            
             const [isMobileChatOpen, setIsMobileChatOpen] = useState(false); 
             const [listRefreshing, setListRefreshing] = useState(false);
             const [chatRefreshing, setChatRefreshing] = useState(false);
@@ -153,9 +148,9 @@
                 });
             }, []);
 
-            // 监听安卓物理返回键
+            // 物理返回键支持
             useEffect(() => {
-                const handlePopState = (event) => {
+                const handlePopState = () => {
                     if (isMobileChatOpen) {
                         setIsMobileChatOpen(false);
                         setTimeout(() => setActiveUser(null), 350); 
@@ -166,7 +161,12 @@
             }, [isMobileChatOpen]);
 
             const handleInstall = () => {
-                if (installPrompt) { installPrompt.prompt(); installPrompt.userChoice.then((res) => { if (res.outcome === 'accepted') setInstallPrompt(null); }); }
+                if (installPrompt) {
+                    installPrompt.prompt();
+                    installPrompt.userChoice.then((res) => {
+                        if (res.outcome === 'accepted') setInstallPrompt(null);
+                    });
+                }
             };
 
             const showToast = (msg) => { setToast({ show: true, msg }); setTimeout(() => setToast({ show: false, msg: '' }), 2000); };
@@ -205,6 +205,10 @@
                     .then(data => {
                         setUsers(data);
                         setTimeout(() => setListRefreshing(false), 500); 
+                        // 如果当前选中的用户在列表里消失了（被拉黑），自动退出
+                        if (activeUserRef.current && !data.find(u => u.id === activeUserRef.current.id)) {
+                            backToUserList();
+                        }
                     })
                     .catch(() => setListRefreshing(false));
             };
@@ -220,7 +224,7 @@
                 });
                 socketRef.current.on('user_status_change', ({ userId, online }) => {
                     setOnlineMap(prev => ({ ...prev, [userId]: online }));
-                    if (!online) setTimeout(fetchUserList, 1000); 
+                    if (!online) setTimeout(fetchUserList, 500); 
                 });
 
                 socketRef.current.on('admin_receive_message', (msg) => {
@@ -249,7 +253,7 @@
                     if (activeUserRef.current?.id === userId) setMessages(prev => prev.map(m => !m.isFromUser ? { ...m, status: 'read' } : m));
                 });
 
-                // 监听删除消息事件 (后端发来)
+                // 同步删除消息
                 socketRef.current.on('message_deleted', ({ messageId, userId }) => {
                     if (activeUserRef.current?.id === userId) setMessages(prev => prev.filter(m => m.id !== messageId));
                 });
@@ -258,10 +262,13 @@
                     setUsers(p => p.filter(u => u.id !== uid)); 
                     if(activeUserRef.current?.id === uid) manualGoBack();
                 });
+                
                 socketRef.current.on('admin_user_blocked', (uid) => { 
                     setUsers(p => p.filter(u => u.id !== uid)); 
                     if(activeUserRef.current?.id === uid) manualGoBack();
                 });
+
+                socketRef.current.on('admin_db_cleared', () => location.reload());
 
                 socketRef.current.on('merge_result', ({ success, msg }) => {
                     showToast(msg);
@@ -304,16 +311,15 @@
             };
 
             const deleteMessage = (msgId) => {
-                if(confirm('🗑️ 确定删除这条消息吗？(双方都会删除)')) {
-                    // 1. 立即在前端移除，实现“丝滑”消失
+                if(confirm('🗑️ 确定删除这条消息？(双方都会删除)')) {
+                    // 乐观更新：先在本地移除
                     setMessages(prev => prev.filter(m => m.id !== msgId));
-                    // 2. 发送给后端真正删除
                     socketRef.current.emit('admin_delete_message', { messageId: msgId, userId: activeUser.id });
                 }
             };
 
             const blockUser = () => {
-                if(confirm(`⚠️ 确定要拉黑并清空用户 ${activeUser.id} 吗？\n(用户端将显示被禁止)`)) {
+                if(confirm(`⚠️ 确定要彻底拉黑并清空用户 ${activeUser.id} 吗？\n(用户将被强制下线并显示被禁止)`)) {
                     socketRef.current.emit('admin_block_user', { userId: activeUser.id });
                     manualGoBack();
                 }
