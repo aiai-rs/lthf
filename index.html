@@ -164,7 +164,7 @@
                 return () => window.removeEventListener('popstate', handlePopState);
             }, [isMobileChatOpen]);
 
-            // 修改：增加可视状态监听，管理员切回页面时自动刷新，确保实时性
+            // 修改：增强可视状态监听，管理员切回页面时自动刷新，确保实时性
             useEffect(() => {
                 const handleVis = () => {
                     if (document.visibilityState === 'visible') {
@@ -273,6 +273,7 @@
                 // 修改：修复删除无法同步的问题。
                 // 1. 使用 != 比较，防止数字/字符串类型差异
                 // 2. 删除后立即刷新 fetchUserList 以更新左侧预览
+                // 3. 移除 userId 校验，只要当前聊天窗有这个消息就删掉
                 socketRef.current.on('message_deleted', ({ messageId, userId }) => {
                     fetchUserList(); 
                     if (activeUserRef.current?.id === userId) {
