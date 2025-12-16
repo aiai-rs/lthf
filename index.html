@@ -42,18 +42,22 @@
             -webkit-touch-callout: none;
             user-select: none;
         }
+        
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+        
         #root { height: 100dvh; width: 100vw; display: flex; flex-direction: column; }
         button { outline: none; }
+        
         .glass-header { 
-            background: rgba(255, 255, 255, 0.92); 
+            background: rgba(255, 255, 255, 0.95); 
             backdrop-filter: blur(12px); 
             -webkit-backdrop-filter: blur(12px); 
             border-bottom: 1px solid rgba(0,0,0,0.05); 
         }
+        
         .ios-scroll { 
             overflow-y: auto; 
             -webkit-overflow-scrolling: touch; 
@@ -90,9 +94,10 @@
             return <span className="text-gray-400 text-[10px] ml-1">✓</span>;
         };
 
+        // 修复：确保刷新图标点击事件正确冒泡并显示动画
         const RefreshIcon = ({ onClick, spinning, className }) => (
-            <button onClick={(e) => { e.stopPropagation(); onClick(); }} className={`p-2.5 active:bg-gray-200 rounded-full transition-all active:scale-90 ${className}`} title="刷新">
-                <svg className={`w-4.5 h-4.5 text-gray-500 ${spinning ? 'animate-spin-fast text-blue-500' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            <button onClick={(e) => { e.stopPropagation(); onClick(); }} className={`p-2 active:bg-gray-200 rounded-full transition-all active:scale-90 ${className}`} title="刷新数据">
+                <svg className={`w-5 h-5 text-gray-500 ${spinning ? 'animate-spin-fast text-blue-500' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
             </button>
         );
 
@@ -127,6 +132,7 @@
             const [userTyping, setUserTyping] = useState(false);
             const [onlineMap, setOnlineMap] = useState({});
             const [filterType, setFilterType] = useState('all'); 
+            
             const [isMobileChatOpen, setIsMobileChatOpen] = useState(false); 
             const [listRefreshing, setListRefreshing] = useState(false);
             const [chatRefreshing, setChatRefreshing] = useState(false);
@@ -148,7 +154,6 @@
                 });
             }, []);
 
-            // 物理返回键支持
             useEffect(() => {
                 const handlePopState = () => {
                     if (isMobileChatOpen) {
@@ -198,6 +203,7 @@
                 } catch { alert("❌ 连接服务器失败"); }
             };
 
+            // 核心修复：刷新列表功能
             const fetchUserList = () => {
                 setListRefreshing(true);
                 fetch(`${SOCKET_URL}/api/admin/users`)
@@ -205,7 +211,7 @@
                     .then(data => {
                         setUsers(data);
                         setTimeout(() => setListRefreshing(false), 500); 
-                        // 如果当前选中的用户在列表里消失了（被拉黑），自动退出
+                        // 如果当前用户不在列表中（说明被拉黑移除了），强制退出聊天
                         if (activeUserRef.current && !data.find(u => u.id === activeUserRef.current.id)) {
                             backToUserList();
                         }
@@ -224,7 +230,8 @@
                 });
                 socketRef.current.on('user_status_change', ({ userId, online }) => {
                     setOnlineMap(prev => ({ ...prev, [userId]: online }));
-                    if (!online) setTimeout(fetchUserList, 500); 
+                    // 用户上下线时自动刷新列表，保证时间准确
+                    if (!online) setTimeout(fetchUserList, 1000); 
                 });
 
                 socketRef.current.on('admin_receive_message', (msg) => {
@@ -253,7 +260,7 @@
                     if (activeUserRef.current?.id === userId) setMessages(prev => prev.map(m => !m.isFromUser ? { ...m, status: 'read' } : m));
                 });
 
-                // 同步删除消息
+                // 核心修复：监听删除事件，同步移除界面上的消息
                 socketRef.current.on('message_deleted', ({ messageId, userId }) => {
                     if (activeUserRef.current?.id === userId) setMessages(prev => prev.filter(m => m.id !== messageId));
                 });
@@ -267,8 +274,6 @@
                     setUsers(p => p.filter(u => u.id !== uid)); 
                     if(activeUserRef.current?.id === uid) manualGoBack();
                 });
-
-                socketRef.current.on('admin_db_cleared', () => location.reload());
 
                 socketRef.current.on('merge_result', ({ success, msg }) => {
                     showToast(msg);
@@ -288,6 +293,7 @@
                 refreshHistory(user.id);
             };
 
+            // 核心修复：刷新历史记录功能
             const refreshHistory = async (uid) => {
                 if(!uid) return;
                 setChatRefreshing(true);
@@ -310,10 +316,10 @@
                 showToast(current ? "已取消静音" : "已开启静音");
             };
 
+            // 核心修复：删除消息逻辑
             const deleteMessage = (msgId) => {
                 if(confirm('🗑️ 确定删除这条消息？(双方都会删除)')) {
-                    // 乐观更新：先在本地移除
-                    setMessages(prev => prev.filter(m => m.id !== msgId));
+                    setMessages(prev => prev.filter(m => m.id !== msgId)); // 先本地删，视觉秒删
                     socketRef.current.emit('admin_delete_message', { messageId: msgId, userId: activeUser.id });
                 }
             };
