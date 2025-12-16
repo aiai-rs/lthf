@@ -322,6 +322,11 @@
             const manualGoBack = () => {
                 if (isMobileChatOpen) window.history.back(); 
             };
+            
+            const backToUserList = () => {
+                setIsMobileChatOpen(false);
+                setActiveUser(null);
+            };
 
             const toggleMute = (e, uid, current) => { 
                 if(e) e.stopPropagation(); 
@@ -345,7 +350,7 @@
             };
 
             const blockUser = () => {
-                if(confirm(`⚠️ 确定要彻底拉黑并清空用户 ${activeUser.id} 吗？\n(用户将被强制下线并显示被禁止)`)) {
+                if(confirm(`⚠️ 确定要彻底拉黑并清空用户 ${activeUser.id} 吗？\n(用户将被强制下线、删除聊天记录、删除订阅)`)) {
                     socketRef.current.emit('admin_block_user', { userId: activeUser.id });
                     manualGoBack();
                 }
