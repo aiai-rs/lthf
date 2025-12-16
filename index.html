@@ -22,16 +22,15 @@
             theme: {
                 extend: {
                     colors: { 
-                        theme: { bg: "#f8f9fa", sidebar: "#ffffff", active: "#e5e7eb", primary: "#3b82f6", text: "#1f2937", sub: "#6b7280" }
+                        theme: { bg: "#f0f2f5", chatBg: "#efeae2", primary: "#0088cc" }
                     },
                     animation: {
                         'spin-fast': 'spin 0.7s linear infinite',
-                        'slide-in': 'slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                        'slide-in-right': 'slideInRight 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards',
                         'fade-in': 'fadeIn 0.2s ease-out forwards',
-                        'bounce-slow': 'bounce 2s infinite',
                     },
                     keyframes: {
-                        slideIn: { '0%': { transform: 'translateX(100%)' }, '100%': { transform: 'translateX(0)' } },
+                        slideInRight: { '0%': { transform: 'translateX(100%)' }, '100%': { transform: 'translateX(0)' } },
                         fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } }
                     }
                 }
@@ -41,7 +40,7 @@
     <style>
         * { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
         body { 
-            background-color: #f8f9fa; 
+            background-color: #f0f2f5; 
             color: #1f2937; 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
             overflow: hidden; 
@@ -51,15 +50,18 @@
         }
         
         .hide-scrollbar::-webkit-scrollbar { display: none; }
-        #root { height: 100dvh; width: 100vw; display: flex; flex-direction: column; position: fixed; inset: 0; }
         
+        #root { height: 100dvh; width: 100vw; display: flex; flex-direction: column; }
         button { outline: none; }
+        
+        /* 这里的动画曲线是为了模仿原生 APP 的丝滑感 */
+        .page-transition { transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1); }
         
         .glass-header { 
             background: rgba(255, 255, 255, 0.95); 
-            backdrop-filter: blur(20px); 
-            -webkit-backdrop-filter: blur(20px); 
-            border-bottom: 1px solid rgba(0,0,0,0.06); 
+            backdrop-filter: blur(12px); 
+            -webkit-backdrop-filter: blur(12px); 
+            border-bottom: 1px solid rgba(0,0,0,0.05); 
         }
         
         .ios-scroll { 
@@ -69,12 +71,6 @@
             transform: translateZ(0); 
             will-change: scroll-position;
         }
-
-        /* 移动端全屏聊天窗口过渡 */
-        .mobile-chat-enter { transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
-        .mobile-chat-enter-active { transform: translateX(0); }
-        .mobile-chat-exit { transform: translateX(0); transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1); }
-        .mobile-chat-exit-active { transform: translateX(100%); }
     </style>
 </head>
 <body>
@@ -90,30 +86,43 @@
             return date.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
         };
 
+        const formatLastSeen = (d) => {
+            if(!d) return '';
+            const date = new Date(d);
+            const now = new Date();
+            const timeStr = date.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+            const isToday = date.getDate() === now.getDate() && date.getMonth() === now.getMonth();
+            return isToday ? `离线 ${timeStr}` : `${date.getMonth()+1}/${date.getDate()} ${timeStr}`;
+        };
+
         const IconStatus = ({ status }) => {
             if (status === 'read') return <span className="text-green-500 text-[10px] ml-1 font-bold">✓✓</span>;
             return <span className="text-gray-400 text-[10px] ml-1">✓</span>;
         };
 
-        // 全局 Toast 提示组件
+        const RefreshIcon = ({ onClick, spinning, className }) => (
+            <button onClick={(e) => { e.stopPropagation(); onClick(); }} className={`p-2 active:bg-gray-200 rounded-full transition-all active:scale-90 ${className}`} title="刷新">
+                <svg className={`w-5 h-5 text-gray-500 ${spinning ? 'animate-spin-fast text-blue-500' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            </button>
+        );
+
         const Toast = ({ msg, show }) => {
             if (!show) return null;
             return (
-                <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[9999] animate-fade-in">
-                    <div className="bg-black/80 backdrop-blur text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2">
-                        <span>✅</span> {msg}
+                <div className="fixed top-12 left-1/2 transform -translate-x-1/2 z-[9999] animate-fade-in pointer-events-none">
+                    <div className="bg-black/80 backdrop-blur text-white px-4 py-2 rounded-full shadow-xl text-sm font-medium flex items-center gap-2">
+                        <span>✨</span> {msg}
                     </div>
                 </div>
             );
         };
 
-        // 图片全屏预览组件
         const ImageViewer = ({ src, onClose }) => {
             if (!src) return null;
             return (
-                <div className="fixed inset-0 z-[10000] bg-black/95 backdrop-blur-sm flex items-center justify-center animate-fade-in" onClick={onClose}>
+                <div className="fixed inset-0 z-[10000] bg-black/95 backdrop-blur-md flex items-center justify-center animate-fade-in" onClick={onClose}>
                     <img src={src} className="max-w-full max-h-full object-contain p-2" />
-                    <button className="absolute top-4 right-4 text-white/80 p-2 text-xl font-bold bg-white/10 rounded-full w-10 h-10 flex items-center justify-center">✕</button>
+                    <button className="absolute top-6 right-6 text-white p-3 bg-white/20 rounded-full active:scale-90 transition-transform">✕</button>
                 </div>
             );
         };
@@ -129,7 +138,6 @@
             const [onlineMap, setOnlineMap] = useState({});
             const [filterType, setFilterType] = useState('all'); 
             
-            // UI 状态
             const [isMobileChatOpen, setIsMobileChatOpen] = useState(false); 
             const [listRefreshing, setListRefreshing] = useState(false);
             const [chatRefreshing, setChatRefreshing] = useState(false);
@@ -144,21 +152,30 @@
 
             useEffect(() => { activeUserRef.current = activeUser; }, [activeUser]);
 
+            // 监听 PWA 安装
             useEffect(() => {
-                window.addEventListener('beforeinstallprompt', (e) => {
-                    e.preventDefault();
-                    setInstallPrompt(e);
-                });
+                window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); setInstallPrompt(e); });
             }, []);
 
-            const showToast = (msg) => {
-                setToast({ show: true, msg });
-                setTimeout(() => setToast({ show: false, msg: '' }), 2000);
+            // 核心：监听安卓物理返回键
+            useEffect(() => {
+                const handlePopState = (event) => {
+                    // 如果当前打开了聊天窗口，拦截返回事件，关闭聊天窗口而不退出APP
+                    if (isMobileChatOpen) {
+                        setIsMobileChatOpen(false);
+                        setTimeout(() => setActiveUser(null), 350); // 等动画播完再清空数据
+                    }
+                };
+                window.addEventListener('popstate', handlePopState);
+                return () => window.removeEventListener('popstate', handlePopState);
+            }, [isMobileChatOpen]);
+
+            const handleInstall = () => {
+                if (installPrompt) { installPrompt.prompt(); installPrompt.userChoice.then((res) => { if (res.outcome === 'accepted') setInstallPrompt(null); }); }
             };
 
-            const copyID = (text) => {
-                navigator.clipboard.writeText(text).then(() => showToast(`ID ${text} 已复制`));
-            };
+            const showToast = (msg) => { setToast({ show: true, msg }); setTimeout(() => setToast({ show: false, msg: '' }), 2000); };
+            const copyText = (text) => { navigator.clipboard.writeText(text).then(() => showToast(`已复制: ${text}`)); };
 
             const groupedData = useMemo(() => {
                 const data = { rrii8: { list: [], unread: 0 }, iibb8: { list: [], unread: 0 }, other: { list: [], unread: 0 }, all: { unread: 0 } };
@@ -188,13 +205,10 @@
 
             const fetchUserList = () => {
                 setListRefreshing(true);
-                fetch(`${SOCKET_URL}/api/admin/users`)
-                    .then(r=>r.json())
-                    .then(data => {
-                        setUsers(data);
-                        setTimeout(() => setListRefreshing(false), 500); 
-                    })
-                    .catch(() => setListRefreshing(false));
+                fetch(`${SOCKET_URL}/api/admin/users`).then(r=>r.json()).then(data => {
+                    setUsers(data);
+                    setTimeout(() => setListRefreshing(false), 500); 
+                }).catch(() => setListRefreshing(false));
             };
 
             const initSocket = () => {
@@ -208,7 +222,7 @@
                 });
                 socketRef.current.on('user_status_change', ({ userId, online }) => {
                     setOnlineMap(prev => ({ ...prev, [userId]: online }));
-                    if (!online) setTimeout(fetchUserList, 500); 
+                    if (!online) setTimeout(fetchUserList, 1000); 
                 });
 
                 socketRef.current.on('admin_receive_message', (msg) => {
@@ -217,6 +231,7 @@
                         const target = existing || { id: msg.userId, bossId: msg.bossId || '未知', isMuted: false, unreadCount: 0 };
                         let newUnread = target.unreadCount || 0;
                         if (msg.isFromUser && activeUserRef.current?.id !== msg.userId) newUnread += 1;
+                        // 收到新消息置顶
                         return [{ ...target, updatedAt: new Date(), messages: [{ content: msg.content, type: msg.type }], unreadCount: newUnread }, ...prev.filter(u => u.id !== msg.userId)];
                     });
                     if (activeUserRef.current?.id === msg.userId) {
@@ -239,26 +254,25 @@
 
                 socketRef.current.on('admin_user_deleted', (uid) => { 
                     setUsers(p => p.filter(u => u.id !== uid)); 
-                    if(activeUserRef.current?.id === uid) backToUserList();
+                    if(activeUserRef.current?.id === uid) manualGoBack();
                 });
-                
                 socketRef.current.on('admin_user_blocked', (uid) => { 
                     setUsers(p => p.filter(u => u.id !== uid)); 
-                    if(activeUserRef.current?.id === uid) backToUserList();
+                    if(activeUserRef.current?.id === uid) manualGoBack();
                 });
 
                 socketRef.current.on('merge_result', ({ success, msg }) => {
                     showToast(msg);
-                    if (success) {
-                        fetchUserList();
-                        if (activeUserRef.current) selectUser(activeUserRef.current);
-                    }
+                    if (success) { fetchUserList(); if (activeUserRef.current) selectUser(activeUserRef.current); }
                 });
             };
 
             const selectUser = async (user) => {
                 setActiveUser(user);
                 setIsMobileChatOpen(true);
+                // 关键：推入历史记录，接管返回键
+                window.history.pushState({ chat: true }, ''); 
+                
                 setMessages([]);
                 setUserTyping(false);
                 setUsers(prev => prev.map(u => u.id === user.id ? { ...u, unreadCount: 0 } : u)); 
@@ -276,9 +290,9 @@
                 setTimeout(() => setChatRefreshing(false), 500);
             };
 
-            const backToUserList = () => {
-                setIsMobileChatOpen(false);
-                setTimeout(() => setActiveUser(null), 300);
+            // 手动点击返回按钮时，调用 history.back() 触发 popstate
+            const manualGoBack = () => {
+                if (isMobileChatOpen) window.history.back(); 
             };
 
             const toggleMute = (e, uid, current) => { 
@@ -290,18 +304,21 @@
             };
 
             const deleteMessage = (msgId) => {
-                if(confirm('🗑️ 删除此消息？')) socketRef.current.emit('admin_delete_message', { messageId: msgId, userId: activeUser.id });
+                // e.stopPropagation 已经在 DOM 元素上防止了冒泡，这里不需要额外参数
+                if(confirm('🗑️ 确定删除这条消息吗？(双方都会删除)')) {
+                    socketRef.current.emit('admin_delete_message', { messageId: msgId, userId: activeUser.id });
+                }
             };
 
             const blockUser = () => {
-                if(confirm(`🚫 确定要彻底拉黑删除 ${activeUser.id} 吗？`)) {
+                if(confirm(`⚠️ 确定要彻底拉黑并清空用户 ${activeUser.id} 吗？`)) {
                     socketRef.current.emit('admin_block_user', { userId: activeUser.id });
-                    backToUserList();
+                    manualGoBack();
                 }
             };
 
             const mergeAccount = () => {
-                const oldId = prompt(`🔗 将旧账号合并到当前 (${activeUser.id})。\n\n输入旧ID：`);
+                const oldId = prompt(`🔗 将旧账号数据合并到 ${activeUser.id}。\n\n请输入对方的旧 ID：`);
                 if(oldId && oldId !== activeUser.id) socketRef.current.emit('admin_merge_user', { oldId, newId: activeUser.id });
             };
 
@@ -336,9 +353,9 @@
             useLayoutEffect(() => scrollRef.current?.scrollIntoView({behavior:'auto'}), [messages, userTyping]);
 
             const TabBtn = ({ label, count, unread, active, onClick, color }) => (
-                <button onClick={onClick} className={`relative px-4 py-2.5 text-xs font-bold rounded-xl transition-all duration-200 active:scale-95 shadow-sm ${active ? `${color} text-white shadow-md transform scale-105` : 'bg-white text-gray-500 border border-gray-100'}`}>
+                <button onClick={onClick} className={`relative px-4 py-2 text-xs font-bold rounded-full transition-all duration-200 active:scale-95 shadow-sm whitespace-nowrap ${active ? `${color} text-white shadow-md` : 'bg-white text-gray-500 border border-gray-100'}`}>
                     {label} <span className="opacity-80 ml-1">{count}</span>
-                    {unread > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white w-4 h-4 flex items-center justify-center rounded-full text-[9px] border border-white">{unread > 99 ? '99+' : unread}</span>}
+                    {unread > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white w-4 h-4 flex items-center justify-center rounded-full text-[9px] border border-white">{unread > 99 ? '99+' : unread}</span>}
                 </button>
             );
 
@@ -346,34 +363,30 @@
                 <div className="h-screen w-full flex items-center justify-center bg-gray-50">
                     <div className="bg-white p-8 rounded-3xl shadow-2xl w-[90%] max-w-sm text-center border border-gray-100">
                         <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto mb-6 flex items-center justify-center text-2xl text-white shadow-lg">🛡️</div>
-                        <h1 className="text-xl font-bold text-gray-800 mb-6">汇盈总控</h1>
+                        <h1 className="text-xl font-bold text-gray-800 mb-6">汇盈总控台</h1>
                         <input type="password" value={password} onChange={e=>setPassword(e.target.value)} 
-                            className="w-full bg-gray-50 border border-gray-200 text-gray-800 p-4 rounded-2xl mb-4 text-center outline-none focus:border-blue-500" 
+                            className="w-full bg-gray-50 border border-gray-200 text-gray-800 p-4 rounded-2xl mb-4 text-center outline-none focus:border-blue-500 transition-all" 
                             placeholder="输入访问密码" onKeyDown={e=>e.key==='Enter'&&login()} />
-                        <button onClick={login} className="w-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white py-4 rounded-2xl font-bold transition-all shadow-lg">登录</button>
-                        {installPrompt && (
-                            <button onClick={installPrompt.prompt} className="mt-4 w-full bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-600 py-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all">
-                                📲 安装到桌面 (APP)
-                            </button>
-                        )}
+                        <button onClick={login} className="w-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white py-4 rounded-2xl font-bold transition-all shadow-lg">登录系统</button>
+                        {installPrompt && <button onClick={handleInstall} className="mt-6 w-full bg-gray-100 text-gray-600 py-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-all">📲 安装到主屏幕</button>}
                     </div>
                 </div>
             );
 
             return (
-                <div className="flex w-full h-full overflow-hidden">
+                <div className="flex w-full h-full overflow-hidden relative">
                     <Toast msg={toast.msg} show={toast.show} />
                     <ImageViewer src={previewImg} onClose={()=>setPreviewImg(null)} />
 
                     {/* 左侧用户列表 */}
-                    <div className={`${isMobileChatOpen ? 'hidden md:flex' : 'flex'} w-full md:w-[320px] bg-white border-r border-gray-100 flex-col shrink-0 h-full shadow-lg z-10 animate-fade-in`}>
+                    <div className={`${isMobileChatOpen ? 'hidden md:flex' : 'flex'} w-full md:w-[320px] bg-white border-r border-gray-100 flex-col shrink-0 h-full shadow-lg z-10`}>
                         <div className="h-16 flex items-center justify-between px-4 glass-header z-10 sticky top-0 shrink-0">
                             <span className="font-bold text-gray-800 text-lg flex items-center gap-2">
-                                消息 <button onClick={fetchUserList} className={`p-2 rounded-full hover:bg-gray-100 ${listRefreshing ? 'animate-spin-fast text-blue-500' : 'text-gray-400'}`}><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg></button>
+                                消息 <RefreshIcon onClick={fetchUserList} spinning={listRefreshing} />
                             </span>
                             <div className="flex gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-red-400"></div><div className="w-2.5 h-2.5 rounded-full bg-yellow-400"></div><div className="w-2.5 h-2.5 rounded-full bg-green-400"></div></div>
                         </div>
-                        <div className="p-3 flex gap-3 overflow-x-auto hide-scrollbar shrink-0 bg-gray-50/50">
+                        <div className="p-3 flex gap-3 overflow-x-auto hide-scrollbar shrink-0 bg-gray-50/50 border-b border-gray-100">
                             <TabBtn label="全部" count={users.length} unread={groupedData.all.unread} active={filterType==='all'} onClick={()=>setFilterType('all')} color="bg-blue-600" />
                             <TabBtn label="rrii8" count={groupedData.rrii8.list.length} unread={groupedData.rrii8.unread} active={filterType==='rrii8'} onClick={()=>setFilterType('rrii8')} color="bg-purple-600" />
                             <TabBtn label="iibb8" count={groupedData.iibb8.list.length} unread={groupedData.iibb8.unread} active={filterType==='iibb8'} onClick={()=>setFilterType('iibb8')} color="bg-orange-500" />
@@ -382,12 +395,12 @@
                             {currentList.map(u => (
                                 <div key={u.id} onClick={() => selectUser(u)} className={`relative p-4 cursor-pointer border-b border-gray-50 flex gap-4 transition-all duration-200 active:bg-gray-100 ${activeUser?.id===u.id ? 'bg-blue-50/80 border-l-4 border-blue-600 pl-3' : 'hover:bg-gray-50 border-l-4 border-transparent'}`}>
                                     <div className="relative shrink-0">
-                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold text-white shadow-md transition-transform duration-300 ${activeUser?.id===u.id ? 'bg-blue-500 scale-105' : 'bg-slate-400'}`}>{u.id.slice(-2)}</div>
+                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold text-white shadow-md transition-transform duration-300 ${activeUser?.id===u.id ? 'bg-blue-500 scale-105' : 'bg-gray-400'}`}>{u.id.slice(-2)}</div>
                                         {onlineMap[u.id] && <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full ring-2 ring-white"></div>}
                                     </div>
                                     <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
                                         <div className="flex justify-between items-center">
-                                            <span className="font-bold truncate text-sm text-gray-800">{u.id} <span className="font-normal text-xs text-gray-400 ml-1">({u.bossId})</span></span>
+                                            <span className="font-bold truncate text-base text-gray-800">{u.id} <span className="font-normal text-xs text-gray-400 ml-1">({u.bossId})</span></span>
                                             <span className="text-[10px] text-gray-400">{formatTime(u.updatedAt)}</span>
                                         </div>
                                         <div className="flex justify-between items-center">
@@ -401,50 +414,65 @@
                         </div>
                     </div>
 
-                    {/* 右侧聊天窗口 - 手机端滑入效果 */}
-                    <div className={`${isMobileChatOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'} fixed md:relative inset-0 bg-[#f0f2f5] z-20 flex flex-col transition-transform duration-300 ease-out md:transform-none`}>
+                    {/* 右侧聊天窗口 - 关键适配：page-transition 类实现丝滑滑入 */}
+                    <div className={`${isMobileChatOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'} page-transition fixed md:relative inset-0 bg-[#f0f2f5] z-20 flex flex-col md:transform-none`}>
                         {activeUser ? (
                             <>
                                 <div className="h-16 flex items-center justify-between px-3 md:px-6 shrink-0 shadow-sm glass-header z-20">
-                                    <div className="flex items-center gap-3 overflow-hidden">
-                                        <button onClick={backToUserList} className="md:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full active:scale-90 transition-transform"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg></button>
-                                        <div className="flex flex-col min-w-0" onClick={() => copyID(activeUser.id)}>
+                                    <div className="flex items-center gap-2 overflow-hidden">
+                                        <button onClick={manualGoBack} className="md:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full active:scale-90 transition-transform"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg></button>
+                                        <div className="flex flex-col min-w-0" onClick={() => copyText(activeUser.id)}>
                                             <div className="flex items-center gap-2 active:opacity-50 transition-opacity cursor-pointer">
                                                 <span className="font-bold text-gray-900 text-lg truncate">{activeUser.id}</span>
-                                                <span className="text-[10px] text-gray-400 bg-gray-100 px-1 rounded">复制</span>
+                                                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                                             </div>
-                                            <span className={`text-xs flex items-center gap-1.5 font-medium px-2 py-0.5 rounded-full w-fit ${onlineMap[activeUser.id] ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`}>
-                                                <span className={`w-1.5 h-1.5 rounded-full ${onlineMap[activeUser.id] ? 'bg-green-500' : 'bg-gray-400'}`}></span>
-                                                {onlineMap[activeUser.id] ? '在线' : formatTime(activeUser.updatedAt) + ' 离线'}
-                                            </span>
+                                            <div className="flex items-center gap-2 text-xs">
+                                                <span className={`flex items-center gap-1 ${onlineMap[activeUser.id] ? 'text-green-600 font-bold' : 'text-gray-400'}`}>
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${onlineMap[activeUser.id] ? 'bg-green-500' : 'bg-gray-400'}`}></span>
+                                                    {onlineMap[activeUser.id] ? '在线' : formatLastSeen(activeUser.updatedAt)}
+                                                </span>
+                                                <span className="text-gray-300">|</span>
+                                                <span className="text-blue-600 font-medium bg-blue-50 px-1.5 rounded">来自: {activeUser.bossId}</span>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2 md:gap-3 shrink-0">
-                                        <button onClick={mergeAccount} className="p-2.5 text-indigo-600 bg-indigo-50 rounded-full active:scale-90 transition-transform" title="合并"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg></button>
-                                        <button onClick={()=>refreshHistory(activeUser.id)} className={`p-2.5 text-gray-500 hover:bg-gray-100 rounded-full active:scale-90 transition-transform ${chatRefreshing ? 'animate-spin-fast text-blue-500' : ''}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg></button>
-                                        <button onClick={(e)=>toggleMute(e, activeUser.id, activeUser.isMuted)} className={`p-2.5 rounded-full active:scale-90 transition-transform ${activeUser.isMuted ? 'bg-orange-100 text-orange-500' : 'text-gray-500 hover:bg-gray-100'}`} title="静音">
+                                    <div className="flex items-center gap-1 md:gap-2 shrink-0">
+                                        <button onClick={mergeAccount} className="p-2 text-indigo-600 bg-indigo-50 rounded-full active:scale-90 transition-transform" title="合并"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg></button>
+                                        <RefreshIcon onClick={()=>refreshHistory(activeUser.id)} spinning={chatRefreshing} />
+                                        <button onClick={(e)=>toggleMute(e, activeUser.id, activeUser.isMuted)} className={`p-2 rounded-full active:scale-90 transition-transform ${activeUser.isMuted ? 'bg-orange-100 text-orange-500' : 'text-gray-500 hover:bg-gray-100'}`} title="静音">
                                             {activeUser.isMuted ? <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>}
                                         </button>
-                                        <button onClick={blockUser} className="p-2.5 text-red-500 hover:bg-red-50 rounded-full active:scale-90 transition-transform" title="删除"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+                                        <button onClick={blockUser} className="p-2 text-red-500 bg-red-50 rounded-full active:scale-90 transition-transform ml-1" title="删除"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
                                     </div>
                                 </div>
                                 
-                                <div className="flex-1 ios-scroll p-4 space-y-5 bg-[#f0f2f5] pb-24 relative">
+                                <div className="flex-1 ios-scroll p-4 space-y-5 bg-[#efeae2] pb-24 relative shadow-inner">
                                     {messages.map((m, i) => (
                                         <div key={i} className={`flex w-full group ${!m.isFromUser ? 'justify-end' : 'justify-start'}`}>
-                                            {!m.isFromUser && <button onClick={()=>deleteMessage(m.id)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 mr-2 text-xs">✕</button>}
-                                            <div className={`max-w-[85%] md:max-w-[70%] px-4 py-3 rounded-2xl text-[15px] leading-relaxed shadow-sm break-words relative transition-all ${!m.isFromUser ? 'bg-blue-600 text-white rounded-br-sm shadow-blue-200' : 'bg-white text-gray-800 rounded-bl-sm'}`}>
+                                            {!m.isFromUser && <button onClick={(e)=>{e.stopPropagation();deleteMessage(m.id)}} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 mr-2 text-xs p-2">✕</button>}
+                                            <div className={`max-w-[85%] md:max-w-[70%] px-4 py-2.5 rounded-2xl text-[15px] leading-relaxed shadow-sm break-words relative transition-all ${!m.isFromUser ? 'bg-[#0088cc] text-white rounded-br-none' : 'bg-white text-gray-900 rounded-bl-none'}`}>
                                                 {(m.type === 'image' || m.content.startsWith('data:image')) ? <img src={m.content} className="rounded-lg max-h-[250px] cursor-pointer" onClick={()=>setPreviewImg(m.content)}/> : <span className="whitespace-pre-wrap">{m.content}</span>}
                                                 <div className={`text-[10px] text-right mt-1 flex justify-end gap-1 opacity-70 ${!m.isFromUser ? 'text-blue-100' : 'text-gray-400'}`}>{formatTime(m.createdAt)}{!m.isFromUser && <IconStatus status={m.status}/>}</div>
                                             </div>
-                                            {m.isFromUser && <button onClick={()=>deleteMessage(m.id)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 ml-2 text-xs">✕</button>}
+                                            {m.isFromUser && <button onClick={(e)=>{e.stopPropagation();deleteMessage(m.id)}} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 ml-2 text-xs p-2">✕</button>}
                                         </div>
                                     ))}
                                     <div ref={scrollRef}></div>
                                 </div>
 
-                                <div className="absolute bottom-0 left-0 right-0 p-3 bg-white border-t border-gray-100 z-30 pb-safe glass-header">
-                                    {userTyping && <div className="absolute -top-10 left-4 text-xs text-gray-500 bg-white/80 backdrop-blur px-3 py-1.5 rounded-full shadow-sm animate-bounce">对方正在输入...</div>}
+                                {/* 对方输入中提示 - 悬浮在输入框上方 */}
+                                {userTyping && (
+                                    <div className="absolute bottom-20 left-4 z-40 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full shadow-md border border-gray-100 text-xs text-blue-500 font-bold flex items-center gap-1 animate-fade-in">
+                                        <span>对方正在输入</span>
+                                        <span className="flex gap-0.5">
+                                            <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce"></span>
+                                            <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce delay-75"></span>
+                                            <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce delay-150"></span>
+                                        </span>
+                                    </div>
+                                )}
+
+                                <div className="absolute bottom-0 left-0 right-0 p-2 bg-white border-t border-gray-100 z-30 pb-safe glass-header">
                                     <div className="flex items-end gap-2 bg-gray-50 p-1.5 rounded-[24px] border border-gray-200 focus-within:border-blue-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-100 transition-all duration-300">
                                         <label className="p-3 text-gray-400 hover:text-blue-500 cursor-pointer active:scale-90 transition-transform"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg><input type="file" className="hidden" accept="image/*" onChange={handleFile} /></label>
                                         <textarea value={inputValue} onChange={handleTyping} onKeyDown={e => {if(e.key==='Enter' && !e.shiftKey){e.preventDefault(); if(inputValue.trim()) send(inputValue)}}} className="flex-1 bg-transparent text-gray-800 px-2 py-3 outline-none resize-none max-h-32 text-base placeholder-gray-400" placeholder="回复消息..." rows="1" />
@@ -454,7 +482,7 @@
                             </>
                         ) : (
                             <div className="flex-1 flex flex-col items-center justify-center text-gray-400 bg-gray-50/50">
-                                <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center text-5xl mb-6 shadow-sm border border-gray-100 animate-bounce-slow">💬</div>
+                                <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center text-5xl mb-6 shadow-sm border border-gray-100">💬</div>
                                 <p className="text-lg font-medium text-gray-500">选择用户开始服务</p>
                             </div>
                         )}
