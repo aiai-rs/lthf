@@ -235,13 +235,9 @@
                 });
 
                 socketRef.current.on('admin_receive_message', (msg) => {
-                    setUsers(prev => {
-                        const existing = prev.find(u => u.id === msg.userId);
-                        const target = existing || { id: msg.userId, bossId: msg.bossId || '未知', isMuted: false, unreadCount: 0 };
-                        let newUnread = target.unreadCount || 0;
-                        if (msg.isFromUser && activeUserRef.current?.id !== msg.userId) newUnread += 1;
-                        return [{ ...target, updatedAt: new Date(), messages: [{ content: msg.content, type: msg.type }], unreadCount: newUnread }, ...prev.filter(u => u.id !== msg.userId)];
-                    });
+                    // markdown 修改：收到消息时自动刷新列表，确保未读数和预览实时更新
+                    fetchUserList();
+                    
                     if (activeUserRef.current?.id === msg.userId) {
                         setMessages(prev => {
                             if (msg.tempId && prev.some(m => m.tempId === msg.tempId)) return prev; 
@@ -262,6 +258,8 @@
 
                 // 核心修复：监听删除事件，同步移除界面上的消息
                 socketRef.current.on('message_deleted', ({ messageId, userId }) => {
+                    // markdown 修改：删除消息时自动刷新列表，确保预览内容正确更新
+                    fetchUserList();
                     if (activeUserRef.current?.id === userId) setMessages(prev => prev.filter(m => m.id !== messageId));
                 });
 
@@ -379,7 +377,7 @@
                         <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto mb-6 flex items-center justify-center text-2xl text-white shadow-lg">🛡️</div>
                         <h1 className="text-xl font-bold text-gray-800 mb-6">汇盈总控</h1>
                         <input type="password" value={password} onChange={e=>setPassword(e.target.value)} 
-                            className="w-full bg-gray-50 border border-gray-200 text-gray-800 p-4 rounded-2xl mb-4 text-center outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all" 
+                            className="w-full bg-gray-5 border border-gray-200 text-gray-800 p-4 rounded-2xl mb-4 text-center outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all" 
                             placeholder="输入访问密码" onKeyDown={e=>e.key==='Enter'&&login()} />
                         <button onClick={login} className="w-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white py-4 rounded-2xl font-bold transition-all duration-200 shadow-blue-200 shadow-lg">登录</button>
                         
