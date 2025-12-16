@@ -94,7 +94,6 @@
             return <span className="text-gray-400 text-[10px] ml-1">✓</span>;
         };
 
-        // 修复：确保刷新图标点击事件正确冒泡并显示动画
         const RefreshIcon = ({ onClick, spinning, className }) => (
             <button onClick={(e) => { e.stopPropagation(); onClick(); }} className={`p-2 active:bg-gray-200 rounded-full transition-all active:scale-90 ${className}`} title="刷新数据">
                 <svg className={`w-5 h-5 text-gray-500 ${spinning ? 'animate-spin-fast text-blue-500' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -165,6 +164,21 @@
                 return () => window.removeEventListener('popstate', handlePopState);
             }, [isMobileChatOpen]);
 
+            // 修改：增加可视状态监听，管理员切回页面时自动刷新，确保实时性
+            useEffect(() => {
+                const handleVis = () => {
+                    if (document.visibilityState === 'visible') {
+                        if (socketRef.current?.connected) {
+                            fetchUserList();
+                        } else {
+                            socketRef.current?.connect();
+                        }
+                    }
+                };
+                document.addEventListener('visibilitychange', handleVis);
+                return () => document.removeEventListener('visibilitychange', handleVis);
+            }, []);
+
             const handleInstall = () => {
                 if (installPrompt) {
                     installPrompt.prompt();
@@ -203,7 +217,6 @@
                 } catch { alert("❌ 连接服务器失败"); }
             };
 
-            // 核心修复：刷新列表功能
             const fetchUserList = () => {
                 setListRefreshing(true);
                 fetch(`${SOCKET_URL}/api/admin/users`)
@@ -211,7 +224,6 @@
                     .then(data => {
                         setUsers(data);
                         setTimeout(() => setListRefreshing(false), 500); 
-                        // 如果当前用户不在列表中（说明被拉黑移除了），强制退出聊天
                         if (activeUserRef.current && !data.find(u => u.id === activeUserRef.current.id)) {
                             backToUserList();
                         }
@@ -224,20 +236,22 @@
                 socketRef.current = io(SOCKET_URL);
                 socketRef.current.emit('join', { isAdmin: true });
 
+                // 修改：连接成功时也获取一下最新列表
+                socketRef.current.on('connect', fetchUserList);
+
                 socketRef.current.on('online_users_list', (list) => {
                     const map = {}; list.forEach(uid => map[uid] = true);
                     setOnlineMap(map);
                 });
+                
+                // 修改：用户上线/下线时，不仅更新小绿点，还刷新一下列表确保排序和时间准确
                 socketRef.current.on('user_status_change', ({ userId, online }) => {
                     setOnlineMap(prev => ({ ...prev, [userId]: online }));
-                    // 用户上下线时自动刷新列表，保证时间准确
-                    if (!online) setTimeout(fetchUserList, 1000); 
+                    fetchUserList(); // 强制刷新列表
                 });
 
                 socketRef.current.on('admin_receive_message', (msg) => {
-                    // markdown 修改：收到消息时自动刷新列表，确保未读数和预览实时更新
-                    fetchUserList();
-                    
+                    fetchUserList(); // 收到消息强制刷新列表
                     if (activeUserRef.current?.id === msg.userId) {
                         setMessages(prev => {
                             if (msg.tempId && prev.some(m => m.tempId === msg.tempId)) return prev; 
@@ -256,11 +270,14 @@
                     if (activeUserRef.current?.id === userId) setMessages(prev => prev.map(m => !m.isFromUser ? { ...m, status: 'read' } : m));
                 });
 
-                // 核心修复：监听删除事件，同步移除界面上的消息
+                // 修改：修复删除无法同步的问题。
+                // 1. 使用 != 比较，防止数字/字符串类型差异
+                // 2. 删除后立即刷新 fetchUserList 以更新左侧预览
                 socketRef.current.on('message_deleted', ({ messageId, userId }) => {
-                    // markdown 修改：删除消息时自动刷新列表，确保预览内容正确更新
-                    fetchUserList();
-                    if (activeUserRef.current?.id === userId) setMessages(prev => prev.filter(m => m.id !== messageId));
+                    fetchUserList(); 
+                    if (activeUserRef.current?.id === userId) {
+                        setMessages(prev => prev.filter(m => m.id != messageId));
+                    }
                 });
 
                 socketRef.current.on('admin_user_deleted', (uid) => { 
@@ -291,7 +308,6 @@
                 refreshHistory(user.id);
             };
 
-            // 核心修复：刷新历史记录功能
             const refreshHistory = async (uid) => {
                 if(!uid) return;
                 setChatRefreshing(true);
@@ -314,10 +330,15 @@
                 showToast(current ? "已取消静音" : "已开启静音");
             };
 
-            // 核心修复：删除消息逻辑
+            // 修改：优化删除逻辑
+            // 1. 立即更新界面（setMessages）
+            // 2. 发送 Socket 事件
+            // 3. 这里的删除是双向的，因为后端收到 admin_delete_message 会广播 message_deleted 给双方
             const deleteMessage = (msgId) => {
                 if(confirm('🗑️ 确定删除这条消息？(双方都会删除)')) {
-                    setMessages(prev => prev.filter(m => m.id !== msgId)); // 先本地删，视觉秒删
+                    // 乐观更新：先在界面上移除
+                    setMessages(prev => prev.filter(m => m.id != msgId)); 
+                    // 发送删除请求给服务器
                     socketRef.current.emit('admin_delete_message', { messageId: msgId, userId: activeUser.id });
                 }
             };
