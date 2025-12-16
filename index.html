@@ -22,16 +22,10 @@
             theme: {
                 extend: {
                     colors: { 
-                        theme: { bg: "#f0f2f5", chatBg: "#efeae2", primary: "#0088cc" }
+                        theme: { bg: "#f3f4f6", sidebar: "#ffffff", active: "#e5e7eb", primary: "#3b82f6", text: "#1f2937", sub: "#6b7280" }
                     },
                     animation: {
                         'spin-fast': 'spin 0.7s linear infinite',
-                        'slide-in-right': 'slideInRight 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards',
-                        'fade-in': 'fadeIn 0.2s ease-out forwards',
-                    },
-                    keyframes: {
-                        slideInRight: { '0%': { transform: 'translateX(100%)' }, '100%': { transform: 'translateX(0)' } },
-                        fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } }
                     }
                 }
             }
@@ -40,7 +34,7 @@
     <style>
         * { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
         body { 
-            background-color: #f0f2f5; 
+            background-color: #f3f4f6; 
             color: #1f2937; 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
             overflow: hidden; 
@@ -50,15 +44,15 @@
         }
         
         .hide-scrollbar::-webkit-scrollbar { display: none; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
         
         #root { height: 100dvh; width: 100vw; display: flex; flex-direction: column; }
         button { outline: none; }
         
-        /* 这里的动画曲线是为了模仿原生 APP 的丝滑感 */
-        .page-transition { transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1); }
-        
         .glass-header { 
-            background: rgba(255, 255, 255, 0.95); 
+            background: rgba(255, 255, 255, 0.92); 
             backdrop-filter: blur(12px); 
             -webkit-backdrop-filter: blur(12px); 
             border-bottom: 1px solid rgba(0,0,0,0.05); 
@@ -81,7 +75,7 @@
         const SOCKET_URL = "https://lt-1li6.onrender.com"; 
 
         const formatTime = (d) => {
-            if(!d) return '';
+            if(!d) return '未知';
             const date = new Date(d);
             return date.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
         };
@@ -92,7 +86,7 @@
             const now = new Date();
             const timeStr = date.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
             const isToday = date.getDate() === now.getDate() && date.getMonth() === now.getMonth();
-            return isToday ? `离线 ${timeStr}` : `${date.getMonth()+1}/${date.getDate()} ${timeStr}`;
+            return isToday ? `离线于 ${timeStr}` : `${date.getMonth()+1}/${date.getDate()} ${timeStr} 离线`;
         };
 
         const IconStatus = ({ status }) => {
@@ -101,8 +95,8 @@
         };
 
         const RefreshIcon = ({ onClick, spinning, className }) => (
-            <button onClick={(e) => { e.stopPropagation(); onClick(); }} className={`p-2 active:bg-gray-200 rounded-full transition-all active:scale-90 ${className}`} title="刷新">
-                <svg className={`w-5 h-5 text-gray-500 ${spinning ? 'animate-spin-fast text-blue-500' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            <button onClick={(e) => { e.stopPropagation(); onClick(); }} className={`p-2.5 active:bg-gray-200 rounded-full transition-all active:scale-90 ${className}`} title="刷新">
+                <svg className={`w-4.5 h-4.5 text-gray-500 ${spinning ? 'animate-spin-fast text-blue-500' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
             </button>
         );
 
@@ -152,18 +146,19 @@
 
             useEffect(() => { activeUserRef.current = activeUser; }, [activeUser]);
 
-            // 监听 PWA 安装
             useEffect(() => {
-                window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); setInstallPrompt(e); });
+                window.addEventListener('beforeinstallprompt', (e) => {
+                    e.preventDefault();
+                    setInstallPrompt(e);
+                });
             }, []);
 
-            // 核心：监听安卓物理返回键
+            // 监听安卓物理返回键
             useEffect(() => {
                 const handlePopState = (event) => {
-                    // 如果当前打开了聊天窗口，拦截返回事件，关闭聊天窗口而不退出APP
                     if (isMobileChatOpen) {
                         setIsMobileChatOpen(false);
-                        setTimeout(() => setActiveUser(null), 350); // 等动画播完再清空数据
+                        setTimeout(() => setActiveUser(null), 350); 
                     }
                 };
                 window.addEventListener('popstate', handlePopState);
@@ -205,10 +200,13 @@
 
             const fetchUserList = () => {
                 setListRefreshing(true);
-                fetch(`${SOCKET_URL}/api/admin/users`).then(r=>r.json()).then(data => {
-                    setUsers(data);
-                    setTimeout(() => setListRefreshing(false), 500); 
-                }).catch(() => setListRefreshing(false));
+                fetch(`${SOCKET_URL}/api/admin/users`)
+                    .then(r=>r.json())
+                    .then(data => {
+                        setUsers(data);
+                        setTimeout(() => setListRefreshing(false), 500); 
+                    })
+                    .catch(() => setListRefreshing(false));
             };
 
             const initSocket = () => {
@@ -231,7 +229,6 @@
                         const target = existing || { id: msg.userId, bossId: msg.bossId || '未知', isMuted: false, unreadCount: 0 };
                         let newUnread = target.unreadCount || 0;
                         if (msg.isFromUser && activeUserRef.current?.id !== msg.userId) newUnread += 1;
-                        // 收到新消息置顶
                         return [{ ...target, updatedAt: new Date(), messages: [{ content: msg.content, type: msg.type }], unreadCount: newUnread }, ...prev.filter(u => u.id !== msg.userId)];
                     });
                     if (activeUserRef.current?.id === msg.userId) {
@@ -252,6 +249,11 @@
                     if (activeUserRef.current?.id === userId) setMessages(prev => prev.map(m => !m.isFromUser ? { ...m, status: 'read' } : m));
                 });
 
+                // 监听删除消息事件 (后端发来)
+                socketRef.current.on('message_deleted', ({ messageId, userId }) => {
+                    if (activeUserRef.current?.id === userId) setMessages(prev => prev.filter(m => m.id !== messageId));
+                });
+
                 socketRef.current.on('admin_user_deleted', (uid) => { 
                     setUsers(p => p.filter(u => u.id !== uid)); 
                     if(activeUserRef.current?.id === uid) manualGoBack();
@@ -270,7 +272,6 @@
             const selectUser = async (user) => {
                 setActiveUser(user);
                 setIsMobileChatOpen(true);
-                // 关键：推入历史记录，接管返回键
                 window.history.pushState({ chat: true }, ''); 
                 
                 setMessages([]);
@@ -290,7 +291,6 @@
                 setTimeout(() => setChatRefreshing(false), 500);
             };
 
-            // 手动点击返回按钮时，调用 history.back() 触发 popstate
             const manualGoBack = () => {
                 if (isMobileChatOpen) window.history.back(); 
             };
@@ -304,14 +304,16 @@
             };
 
             const deleteMessage = (msgId) => {
-                // e.stopPropagation 已经在 DOM 元素上防止了冒泡，这里不需要额外参数
                 if(confirm('🗑️ 确定删除这条消息吗？(双方都会删除)')) {
+                    // 1. 立即在前端移除，实现“丝滑”消失
+                    setMessages(prev => prev.filter(m => m.id !== msgId));
+                    // 2. 发送给后端真正删除
                     socketRef.current.emit('admin_delete_message', { messageId: msgId, userId: activeUser.id });
                 }
             };
 
             const blockUser = () => {
-                if(confirm(`⚠️ 确定要彻底拉黑并清空用户 ${activeUser.id} 吗？`)) {
+                if(confirm(`⚠️ 确定要拉黑并清空用户 ${activeUser.id} 吗？\n(用户端将显示被禁止)`)) {
                     socketRef.current.emit('admin_block_user', { userId: activeUser.id });
                     manualGoBack();
                 }
@@ -353,22 +355,27 @@
             useLayoutEffect(() => scrollRef.current?.scrollIntoView({behavior:'auto'}), [messages, userTyping]);
 
             const TabBtn = ({ label, count, unread, active, onClick, color }) => (
-                <button onClick={onClick} className={`relative px-4 py-2 text-xs font-bold rounded-full transition-all duration-200 active:scale-95 shadow-sm whitespace-nowrap ${active ? `${color} text-white shadow-md` : 'bg-white text-gray-500 border border-gray-100'}`}>
+                <button onClick={onClick} className={`relative px-4 py-2.5 text-xs font-bold rounded-xl transition-all duration-200 active:scale-95 shadow-sm ${active ? `${color} text-white shadow-md transform scale-105` : 'bg-white text-gray-500 border border-gray-100'}`}>
                     {label} <span className="opacity-80 ml-1">{count}</span>
-                    {unread > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white w-4 h-4 flex items-center justify-center rounded-full text-[9px] border border-white">{unread > 99 ? '99+' : unread}</span>}
+                    {unread > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white w-4 h-4 flex items-center justify-center rounded-full text-[9px] border border-white animate-pulse">{unread > 99 ? '99+' : unread}</span>}
                 </button>
             );
 
             if (view === 'login') return (
                 <div className="h-screen w-full flex items-center justify-center bg-gray-50">
-                    <div className="bg-white p-8 rounded-3xl shadow-2xl w-[90%] max-w-sm text-center border border-gray-100">
+                    <div className="bg-white p-8 rounded-3xl shadow-2xl w-[90%] max-w-sm text-center border border-gray-100 transition-all duration-300">
                         <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto mb-6 flex items-center justify-center text-2xl text-white shadow-lg">🛡️</div>
-                        <h1 className="text-xl font-bold text-gray-800 mb-6">汇盈总控台</h1>
+                        <h1 className="text-xl font-bold text-gray-800 mb-6">汇盈总控</h1>
                         <input type="password" value={password} onChange={e=>setPassword(e.target.value)} 
-                            className="w-full bg-gray-50 border border-gray-200 text-gray-800 p-4 rounded-2xl mb-4 text-center outline-none focus:border-blue-500 transition-all" 
+                            className="w-full bg-gray-50 border border-gray-200 text-gray-800 p-4 rounded-2xl mb-4 text-center outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all" 
                             placeholder="输入访问密码" onKeyDown={e=>e.key==='Enter'&&login()} />
-                        <button onClick={login} className="w-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white py-4 rounded-2xl font-bold transition-all shadow-lg">登录系统</button>
-                        {installPrompt && <button onClick={handleInstall} className="mt-6 w-full bg-gray-100 text-gray-600 py-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-all">📲 安装到主屏幕</button>}
+                        <button onClick={login} className="w-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white py-4 rounded-2xl font-bold transition-all duration-200 shadow-blue-200 shadow-lg">登录</button>
+                        
+                        {installPrompt && (
+                            <button onClick={handleInstall} className="mt-4 w-full bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-600 py-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all">
+                                📲 安装到桌面 (APP)
+                            </button>
+                        )}
                     </div>
                 </div>
             );
@@ -378,7 +385,6 @@
                     <Toast msg={toast.msg} show={toast.show} />
                     <ImageViewer src={previewImg} onClose={()=>setPreviewImg(null)} />
 
-                    {/* 左侧用户列表 */}
                     <div className={`${isMobileChatOpen ? 'hidden md:flex' : 'flex'} w-full md:w-[320px] bg-white border-r border-gray-100 flex-col shrink-0 h-full shadow-lg z-10`}>
                         <div className="h-16 flex items-center justify-between px-4 glass-header z-10 sticky top-0 shrink-0">
                             <span className="font-bold text-gray-800 text-lg flex items-center gap-2">
@@ -414,17 +420,16 @@
                         </div>
                     </div>
 
-                    {/* 右侧聊天窗口 - 关键适配：page-transition 类实现丝滑滑入 */}
-                    <div className={`${isMobileChatOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'} page-transition fixed md:relative inset-0 bg-[#f0f2f5] z-20 flex flex-col md:transform-none`}>
+                    <div className={`${isMobileChatOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'} fixed md:relative inset-0 bg-[#f0f2f5] z-20 flex flex-col transition-transform duration-300 ease-out md:transform-none`}>
                         {activeUser ? (
                             <>
                                 <div className="h-16 flex items-center justify-between px-3 md:px-6 shrink-0 shadow-sm glass-header z-20">
-                                    <div className="flex items-center gap-2 overflow-hidden">
+                                    <div className="flex items-center gap-3 overflow-hidden">
                                         <button onClick={manualGoBack} className="md:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full active:scale-90 transition-transform"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg></button>
                                         <div className="flex flex-col min-w-0" onClick={() => copyText(activeUser.id)}>
                                             <div className="flex items-center gap-2 active:opacity-50 transition-opacity cursor-pointer">
                                                 <span className="font-bold text-gray-900 text-lg truncate">{activeUser.id}</span>
-                                                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                                <span className="text-[10px] text-gray-400 bg-gray-100 px-1 rounded">复制</span>
                                             </div>
                                             <div className="flex items-center gap-2 text-xs">
                                                 <span className={`flex items-center gap-1 ${onlineMap[activeUser.id] ? 'text-green-600 font-bold' : 'text-gray-400'}`}>
@@ -460,7 +465,6 @@
                                     <div ref={scrollRef}></div>
                                 </div>
 
-                                {/* 对方输入中提示 - 悬浮在输入框上方 */}
                                 {userTyping && (
                                     <div className="absolute bottom-20 left-4 z-40 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full shadow-md border border-gray-100 text-xs text-blue-500 font-bold flex items-center gap-1 animate-fade-in">
                                         <span>对方正在输入</span>
