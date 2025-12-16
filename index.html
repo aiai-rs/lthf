@@ -152,15 +152,14 @@
                     setInstallPrompt(e);
                 });
                 
-                // --- 修改开始：增加定时心跳轮询，每10秒强制刷新一次列表，确保在线状态和消息预览绝对精准 ---
+                // --- 修改 1: 确保定时轮询存在，每8秒一次，防止WebSocket意外断连导致的列表不更新 ---
                 const pollInterval = setInterval(() => {
                     if (view === 'main' && document.visibilityState === 'visible') {
                         fetchUserList();
                     }
-                }, 10000); 
+                }, 8000); 
                 return () => clearInterval(pollInterval);
-                // --- 修改结束 ---
-            }, [view]); // 依赖 view，确保登录后才开始轮询
+            }, [view]);
 
             useEffect(() => {
                 const handlePopState = () => {
@@ -226,16 +225,14 @@
             };
 
             const fetchUserList = () => {
-                // 如果正在输入，暂时不显示loading防止闪烁，但后台依然获取数据
-                if(!userTyping) setListRefreshing(true);
+                // 静默更新，不干扰输入
                 fetch(`${SOCKET_URL}/api/admin/users`)
                     .then(r=>r.json())
                     .then(data => {
                         setUsers(data);
-                        setTimeout(() => setListRefreshing(false), 500); 
-                        // --- 修改：移除这里对 activeUser 的判断，防止数据刷新时意外退出聊天 ---
+                        // 移除这里的 setListRefreshing，防止图标一直转
                     })
-                    .catch(() => setListRefreshing(false));
+                    .catch(() => {});
             };
 
             const initSocket = () => {
@@ -248,35 +245,46 @@
                 socketRef.current.on('online_users_list', (list) => {
                     const map = {}; list.forEach(uid => map[uid] = true);
                     setOnlineMap(map);
+                    fetchUserList(); // 列表更新
                 });
                 
+                // --- 修改 2: 有人访问/状态变更，强制刷新 ---
                 socketRef.current.on('user_status_change', ({ userId, online }) => {
                     setOnlineMap(prev => ({ ...prev, [userId]: online }));
-                    fetchUserList(); // 状态改变立即刷新列表
+                    fetchUserList(); 
                 });
 
-                // --- 修改开始：修复消息ID同步问题 ---
+                // --- 修改 3: 核心逻辑 - 修复无法删除“我”的消息 ---
                 socketRef.current.on('admin_receive_message', (msg) => {
-                    fetchUserList(); // 收到消息强制刷新列表，确保预览是最新的
+                    fetchUserList(); // 收到消息立刻刷新列表，保证预览最新
+                    
                     if (activeUserRef.current?.id === msg.userId) {
                         setMessages(prev => {
-                            // 核心修复：如果找到了 tempId 相同的消息，说明是自己刚发的，必须替换成带真实ID的消息
-                            // 否则无法删除，因为之前界面上是 tempId，后端只认 database id
-                            const index = prev.findIndex(m => m.tempId && m.tempId === msg.tempId);
-                            if (index !== -1) {
+                            // 1. 如果已有 ID 相同的（防止重复），直接返回
+                            if (prev.some(m => m.id && m.id === msg.id)) return prev;
+
+                            // 2. 核心修复：查找“内容相同”且“没有真实ID”的本地消息，把它替换成服务器消息
+                            // 这样界面上的消息就有了 ID，可以被删除了
+                            const pendingIndex = prev.findIndex(m => 
+                                !m.isFromUser && // 是我发的消息
+                                !m.id && // 还没有真实 ID
+                                (m.tempId === msg.tempId || m.content === msg.content) // 临时ID匹配 或 内容匹配
+                            );
+
+                            if (pendingIndex !== -1) {
                                 const newMsgs = [...prev];
-                                newMsgs[index] = msg; // 替换为带ID的真实消息
+                                newMsgs[pendingIndex] = msg; // 偷梁换柱，换成带ID的真消息
                                 return newMsgs;
                             }
-                            // 没找到（可能是对方发的，或者新的），直接追加
-                            if (prev.some(m => m.id === msg.id)) return prev; //防止重复
+                            
+                            // 3. 没找到匹配的，说明是新消息，追加
                             return [...prev, msg];
                         });
+                        
                         if (msg.isFromUser) socketRef.current.emit('mark_read', { userId: msg.userId, isAdmin: true });
                         setUserTyping(false);
                     }
                 });
-                // --- 修改结束 ---
 
                 socketRef.current.on('user_typing', ({ userId, isTyping }) => {
                     if (activeUserRef.current?.id === userId) setUserTyping(isTyping);
@@ -287,8 +295,9 @@
                 });
 
                 socketRef.current.on('message_deleted', ({ messageId, userId }) => {
-                    fetchUserList(); 
+                    fetchUserList(); // 删除消息也要刷新列表
                     if (activeUserRef.current?.id === userId) {
+                        // 强制类型转换比较，防止 id 是数字/字符串不一致
                         setMessages(prev => prev.filter(m => m.id != messageId));
                     }
                 });
@@ -350,10 +359,15 @@
 
             const deleteMessage = (msgId) => {
                 if(confirm('🗑️ 确定删除这条消息？(双方都会删除)')) {
+                    // 乐观UI更新：不管服务器咋样，先从界面删掉，体验最好
                     setMessages(prev => prev.filter(m => m.id != msgId)); 
-                    socketRef.current.emit('admin_delete_message', { messageId: msgId, userId: activeUser.id });
                     
-                    // --- 修改：删除后立即刷新列表，更新预览 ---
+                    // 如果 msgId 存在（不是undefined），才发请求
+                    if (msgId) {
+                        socketRef.current.emit('admin_delete_message', { messageId: msgId, userId: activeUser.id });
+                    }
+                    
+                    // 延时刷新列表更新预览
                     setTimeout(fetchUserList, 300);
                 }
             };
@@ -380,15 +394,17 @@
 
             const send = (txt, type = 'text') => {
                 if (!activeUser) return;
-                const tempId = Date.now();
-                // 注意：这里的消息没有 id，只有 tempId，等待 admin_receive_message 回调修复
+                const tempId = Date.now(); // 临时ID
+                // 此时 msg 没有 id，只有 tempId
                 const msg = { userId: activeUser.id, content: txt, type, isFromUser: false, createdAt: new Date(), tempId, status: 'sent' };
                 setMessages(p => [...p, msg]);
                 setInputValue("");
+                
+                // 发送给服务器
                 socketRef.current.emit('admin_reply', { targetUserId: activeUser.id, content: txt, type, tempId });
                 socketRef.current.emit('typing', { targetId: activeUser.id, isTyping: false });
                 
-                // --- 修改：发送后立即刷新列表，让左侧列表显示"我"刚发的消息作为预览 ---
+                // 立即刷新列表，让预览显示最新消息
                 setTimeout(fetchUserList, 200); 
             };
 
@@ -438,7 +454,7 @@
                     <div className={`${isMobileChatOpen ? 'hidden md:flex' : 'flex'} w-full md:w-[320px] bg-white border-r border-gray-100 flex-col shrink-0 h-full shadow-lg z-10`}>
                         <div className="h-16 flex items-center justify-between px-4 glass-header z-10 sticky top-0 shrink-0">
                             <span className="font-bold text-gray-800 text-lg flex items-center gap-2">
-                                消息 <RefreshIcon onClick={fetchUserList} spinning={listRefreshing} />
+                                消息 <RefreshIcon onClick={() => {setListRefreshing(true); fetchUserList(); setTimeout(()=>setListRefreshing(false),500)}} spinning={listRefreshing} />
                             </span>
                             <div className="flex gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-red-400"></div><div className="w-2.5 h-2.5 rounded-full bg-yellow-400"></div><div className="w-2.5 h-2.5 rounded-full bg-green-400"></div></div>
                         </div>
