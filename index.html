@@ -460,7 +460,7 @@
                     <div className={`${isMobileChatOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'} fixed md:relative inset-0 bg-[#f0f2f5] z-20 flex flex-col transition-transform duration-300 ease-out md:transform-none`}>
                         {activeUser ? (
                             <>
-                                <div className="h-16 flex items-center justify-between px-3 md:px-6 shrink-0 shadow-sm glass-header z-20">
+                                <div className="flex items-center justify-between px-3 md:px-6 shrink-0 shadow-sm glass-header z-20 pt-[env(safe-area-inset-top)] pb-2 md:h-16 md:py-0">
                                     <div className="flex items-center gap-3 overflow-hidden">
                                         <button onClick={manualGoBack} className="md:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full active:scale-90 transition-transform"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg></button>
                                         <div className="flex flex-col min-w-0" onClick={() => copyText(activeUser.id)}>
@@ -536,3 +536,4 @@
     </script>
 </body>
 </html>
+
