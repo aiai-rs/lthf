@@ -233,7 +233,8 @@
 
             const initSocket = () => {
                 fetchUserList();
-                socketRef.current = io(SOCKET_URL);
+                // 【修改点】：强制后台也使用 websocket 连接
+                socketRef.current = io(SOCKET_URL, { transports: ['websocket'] });
                 socketRef.current.emit('join', { isAdmin: true });
 
                 // 修改：连接成功时也获取一下最新列表
